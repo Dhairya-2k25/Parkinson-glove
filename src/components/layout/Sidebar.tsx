@@ -16,6 +16,7 @@ import {
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/monitoring', icon: Activity, label: 'Live Monitoring' },
+  { to: '/analytics', icon: Activity, label: 'Tremor Analytics' },
   { to: '/profile', icon: User, label: 'Patient Profile' },
   { to: '/sessions', icon: ClipboardList, label: 'Session History' },
   { to: '/rehabilitation', icon: Heart, label: 'Rehabilitation' },

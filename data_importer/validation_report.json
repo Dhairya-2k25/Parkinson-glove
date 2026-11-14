@@ -1,0 +1,29 @@
+{
+  "validatedAt": "2026-11-14T09:19:49.716Z",
+  "totalChecked": 2,
+  "validCount": 0,
+  "invalidCount": 2,
+  "validRecordings": [],
+  "invalidRecordings": [
+    {
+      "participantId": "sub-01",
+      "observationId": "obs-01",
+      "task": "Rest Tremor Assessment",
+      "samplingFrequency": 100,
+      "location": "RightWrist",
+      "dataFile": "C:\\Users\\DHAIRYA\\OneDrive\\Desktop\\Parkinson\\frontend\\data_importer\\pads_dataset\\sub-01_task-rest.csv",
+      "metadataFile": "C:\\Users\\DHAIRYA\\OneDrive\\Desktop\\Parkinson\\frontend\\data_importer\\pads_dataset\\sub-01_task-rest.json",
+      "reason": "Missing data file"
+    },
+    {
+      "participantId": "sub-02",
+      "observationId": "obs-02",
+      "task": "Postural Tremor Assessment",
+      "samplingFrequency": 100,
+      "location": "RightWrist",
+      "dataFile": "C:\\Users\\DHAIRYA\\OneDrive\\Desktop\\Parkinson\\frontend\\data_importer\\pads_dataset\\sub-02_task-postural.csv",
+      "metadataFile": "C:\\Users\\DHAIRYA\\OneDrive\\Desktop\\Parkinson\\frontend\\data_importer\\pads_dataset\\sub-02_task-postural.json",
+      "reason": "Missing data file"
+    }
+  ]
+}
