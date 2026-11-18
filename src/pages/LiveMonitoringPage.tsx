@@ -7,7 +7,7 @@ import {
   Wifi, WifiOff, Play, Pause, Radio, AlertTriangle,
   Info, Clock,
 } from 'lucide-react';
-import { sensorService, settingsService } from '@/services';
+import { sensorService, settingsService, alertService } from '@/services';
 import { formatTime, isStale, formatNumber } from '@/utils';
 import type { SensorReading, ConnectionStatus } from '@/types';
 
@@ -23,6 +23,7 @@ const LiveMonitoringPage: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const settings = settingsService.getSettings();
+  const lastAlertAtRef = useRef(0);
   const pauseRef = useRef(isPaused);
   pauseRef.current = isPaused;
 
@@ -55,6 +56,14 @@ const LiveMonitoringPage: React.FC = () => {
   useEffect(() => {
     const unsubscribe = sensorService.onReading((reading) => {
       setLatestReading(reading);
+      // Observational movement-activity threshold; not a clinical diagnosis.
+      const gyro = reading.differentialIMU;
+      const activity = gyro ? Math.sqrt(gyro.gx * gyro.gx + gyro.gy * gyro.gy + gyro.gz * gyro.gz) : 0;
+      const now = Date.now();
+      if (activity > 12 && now - lastAlertAtRef.current > 15000) {
+        lastAlertAtRef.current = now;
+        void alertService.createTremorAlert(activity, settings.dataMode === 'demo' ? 'demo' : 'live');
+      }
       if (!pauseRef.current) {
         setReadings(prev => {
           const next = [...prev, reading];
@@ -66,7 +75,7 @@ const LiveMonitoringPage: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [settings.dataMode]);
 
   // Cleanup on unmount
   useEffect(() => {
