@@ -307,6 +307,26 @@ export const alertService = {
     return results.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   },
 
+  async createTremorAlert(activity: number, source: 'demo' | 'live' = 'demo'): Promise<CaregiverAlert> {
+    const alert: CaregiverAlert = {
+      id: `alert-live-${Date.now()}`,
+      patientId: 'demo-patient-001',
+      type: 'tremor_spike',
+      severity: activity >= 18 ? 'high' : 'medium',
+      status: 'new',
+      title: source === 'demo' ? 'Demo movement activity threshold exceeded' : 'Movement activity threshold exceeded',
+      description: `A movement activity estimate of ${activity.toFixed(1)} °/s exceeded the configured demonstration threshold. This is an observational alert, not a diagnosis or a clinically validated tremor measurement.${source === 'demo' ? ' Simulated sensor data was used.' : ''}`,
+      timestamp: new Date().toISOString(),
+      sessionId: null,
+      acknowledgedAt: null,
+      resolvedAt: null,
+      acknowledgedBy: null,
+      isConfirmed: false,
+    };
+    alertsData = [alert, ...alertsData];
+    return { ...alert };
+  },
+
   async getAlert(id: string): Promise<CaregiverAlert | null> {
     await delay(80);
     return alertsData.find(a => a.id === id) ?? null;
