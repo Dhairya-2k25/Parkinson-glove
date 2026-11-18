@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell, Wifi, WifiOff, AlertTriangle, Database, LogOut, UserCircle } from 'lucide-react';
 import { MobileMenuButton } from './Sidebar';
-import { settingsService, notificationService } from '@/services';
+import { settingsService, notificationService, sensorService } from '@/services';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDateTime } from '@/utils';
 import type { AppNotification } from '@/types';
@@ -33,11 +33,14 @@ export const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, onToggleSidebar }) 
   const { user, logout } = useAuth();
   const settings = settingsService.getSettings();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [streamStatus, setStreamStatus] = useState(sensorService.getConnectionStatus());
   const [notifications, setNotifications] = useState<AppNotification[]>(
     notificationService.getNotifications()
   );
   const notifRef = useRef<HTMLDivElement>(null);
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  useEffect(() => sensorService.onStatusChange(status => setStreamStatus(status)), []);
 
   const handleMarkAllRead = useCallback(() => {
     notificationService.markAllAsRead();
@@ -80,19 +83,19 @@ export const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, onToggleSidebar }) 
           title="Data source mode"
         >
           <Database size={12} aria-hidden="true" />
-          <span className="hidden sm:inline">{settings.dataMode === 'demo' ? 'Demo Data' : settings.dataMode === 'live' ? 'Live' : 'Historical'}</span>
-          <span className="sm:hidden">{settings.dataMode === 'demo' ? 'Demo' : settings.dataMode === 'live' ? 'Live' : 'Hist.'}</span>
+          <span className="hidden sm:inline">{settings.dataMode === 'demo' ? 'Simulation' : settings.dataMode === 'live' ? 'Live' : 'Historical'}</span>
+          <span className="sm:hidden">{settings.dataMode === 'demo' ? 'Sim' : settings.dataMode === 'live' ? 'Live' : 'Hist.'}</span>
         </div>
 
-        {/* Connection indicator */}
+        {/* Shared stream/device status */}
         <div
-          className="badge badge-neutral flex items-center gap-1.5"
+          className={`badge flex items-center gap-1.5 ${streamStatus === 'connected' ? 'badge-success' : 'badge-neutral'}`}
           role="status"
-          aria-label="Device not connected"
-          title="Device connection status"
+          aria-label={streamStatus === 'connected' ? 'Sensor stream active' : 'Device not connected'}
+          title={streamStatus === 'connected' ? 'Sensor stream active; simulation or hardware depends on selected data source' : 'No active sensor stream'}
         >
-          <WifiOff size={12} aria-hidden="true" />
-          <span className="hidden sm:inline">Not Connected</span>
+          {streamStatus === 'connected' ? <Wifi size={12} aria-hidden="true" /> : <WifiOff size={12} aria-hidden="true" />}
+          <span className="hidden sm:inline">{streamStatus === 'connected' ? 'Streaming' : 'Not Connected'}</span>
         </div>
 
         {/* Notifications */}
