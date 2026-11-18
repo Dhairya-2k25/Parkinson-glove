@@ -94,11 +94,13 @@ const RehabilitationPage: React.FC = () => {
 
   const handlePause = useCallback(() => {
     setSessionStatus('paused');
+    sensorService.pause();
     pauseTimers();
   }, [pauseTimers]);
 
   const handleResume = useCallback(() => {
     setSessionStatus('in_progress');
+    sensorService.resume();
     startGlobalTimer();
     startPhaseTimer();
   }, [startGlobalTimer, startPhaseTimer]);
@@ -156,6 +158,7 @@ const RehabilitationPage: React.FC = () => {
   }, [clearTimers]);
 
   const handleReset = useCallback(() => {
+    void sensorService.disconnect();
     clearTimers();
     setSessionStatus('not_started');
     setCurrentPhase('idle');
@@ -177,8 +180,7 @@ const RehabilitationPage: React.FC = () => {
         <div className="demo-banner" role="status">
           <Info size={16} aria-hidden="true" />
           <span>
-            <strong>Demonstration Mode</strong> — This exercise interface is for demonstration.
-            No physical sensor feedback is available without the NeuroGlove device.
+            Exercise session controls the shared sensor stream. Simulation values are shown until the NeuroGlove device is connected.
           </span>
         </div>
       )}
