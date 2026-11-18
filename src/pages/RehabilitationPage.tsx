@@ -3,7 +3,7 @@ import {
   Play, Pause, Square, RotateCcw, CheckCircle, Hand,
   GripHorizontal, ArrowDown, Info, Clock, Heart,
 } from 'lucide-react';
-import { rehabService, settingsService } from '@/services';
+import { rehabService, settingsService, sensorService } from '@/services';
 import { formatDate, formatDuration } from '@/utils';
 import type { RehabPhase, RehabSessionStatus, RehabExercise } from '@/types';
 
@@ -87,6 +87,7 @@ const RehabilitationPage: React.FC = () => {
     setElapsedTime(0);
     setPhaseTime(0);
     setCompletedPhases(new Set());
+    void sensorService.connect().catch(() => { /* Monitoring page reports device status. */ });
     startGlobalTimer();
     startPhaseTimer();
   }, [startGlobalTimer, startPhaseTimer]);
@@ -115,6 +116,7 @@ const RehabilitationPage: React.FC = () => {
       setPhaseTime(0);
     } else {
       // Exercise complete
+      void sensorService.disconnect();
       setCurrentPhase('completed');
       setSessionStatus('completed');
       clearTimers();
@@ -143,6 +145,7 @@ const RehabilitationPage: React.FC = () => {
   }, [currentPhase, completedPhases, clearTimers, elapsedTime]);
 
   const handleStop = useCallback(() => {
+    void sensorService.disconnect();
     clearTimers();
     setSessionStatus('cancelled');
     setCurrentPhase('idle');
