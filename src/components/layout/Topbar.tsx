@@ -34,13 +34,17 @@ export const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, onToggleSidebar }) 
   const settings = settingsService.getSettings();
   const [showNotifications, setShowNotifications] = useState(false);
   const [streamStatus, setStreamStatus] = useState(sensorService.getConnectionStatus());
+  const [streamPaused, setStreamPaused] = useState(sensorService.isPaused());
   const [notifications, setNotifications] = useState<AppNotification[]>(
     notificationService.getNotifications()
   );
   const notifRef = useRef<HTMLDivElement>(null);
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  useEffect(() => sensorService.onStatusChange(status => setStreamStatus(status)), []);
+  useEffect(() => sensorService.onStatusChange((status, paused) => {
+    setStreamStatus(status);
+    setStreamPaused(paused);
+  }), []);
 
   const handleMarkAllRead = useCallback(() => {
     notificationService.markAllAsRead();
@@ -89,13 +93,13 @@ export const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, onToggleSidebar }) 
 
         {/* Shared stream/device status */}
         <div
-          className={`badge flex items-center gap-1.5 ${streamStatus === 'connected' ? 'badge-success' : 'badge-neutral'}`}
+          className={`badge flex items-center gap-1.5 ${streamStatus === 'connected' && !streamPaused ? 'badge-success' : 'badge-neutral'}`}
           role="status"
           aria-label={streamStatus === 'connected' ? 'Sensor stream active' : 'Device not connected'}
-          title={streamStatus === 'connected' ? 'Sensor stream active; simulation or hardware depends on selected data source' : 'No active sensor stream'}
+          title={streamStatus === 'connected' ? (streamPaused ? 'Sensor stream paused' : 'Sensor stream active; source depends on selected data mode') : 'No active sensor stream'}
         >
-          {streamStatus === 'connected' ? <Wifi size={12} aria-hidden="true" /> : <WifiOff size={12} aria-hidden="true" />}
-          <span className="hidden sm:inline">{streamStatus === 'connected' ? 'Streaming' : 'Not Connected'}</span>
+          {streamStatus === 'connected' && !streamPaused ? <Wifi size={12} aria-hidden="true" /> : <WifiOff size={12} aria-hidden="true" />}
+          <span className="hidden sm:inline">{streamStatus === 'connected' ? (streamPaused ? 'Paused' : 'Streaming') : 'Not Connected'}</span>
         </div>
 
         {/* Notifications */}
