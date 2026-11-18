@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
   Wifi, WifiOff, Play, Pause, Radio, AlertTriangle,
-  Info, Clock,
+  Clock,
 } from 'lucide-react';
 import { sensorService, settingsService, alertService } from '@/services';
 import { formatTime, isStale, formatNumber } from '@/utils';
