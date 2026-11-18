@@ -14,12 +14,10 @@ import type { SensorReading, ConnectionStatus } from '@/types';
 const MAX_CHART_POINTS = 60;
 
 const LiveMonitoringPage: React.FC = () => {
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
-    sensorService.getConnectionStatus()
-  );
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(sensorService.getConnectionStatus());
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [latestReading, setLatestReading] = useState<SensorReading | null>(null);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isPaused, setIsPaused] = useState(sensorService.isPaused());
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const settings = settingsService.getSettings();
@@ -49,8 +47,15 @@ const LiveMonitoringPage: React.FC = () => {
   }, []);
 
   const togglePause = useCallback(() => {
-    setIsPaused(p => !p);
+    if (sensorService.isPaused()) sensorService.resume();
+    else sensorService.pause();
   }, []);
+
+  // Keep this page synchronized with the shared stream, even when Rehab started it.
+  useEffect(() => sensorService.onStatusChange((status, paused) => {
+    setConnectionStatus(status);
+    setIsPaused(paused);
+  }), []);
 
   // Subscribe to readings
   useEffect(() => {
@@ -77,12 +82,7 @@ const LiveMonitoringPage: React.FC = () => {
     };
   }, [settings.dataMode]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      sensorService.disconnect();
-    };
-  }, []);
+  // Do not disconnect on page navigation: Rehab and Monitoring share one stream.
 
   const lastTimestamp = latestReading?.timestamp ?? null;
   const dataIsStale = isStale(lastTimestamp, settings.staleDataThreshold);
@@ -113,13 +113,10 @@ const LiveMonitoringPage: React.FC = () => {
 
   return (
     <div>
-      {/* Demo Banner */}
+      {/* Subtle source disclosure */}
       {settings.dataMode === 'demo' && (
-        <div className="demo-banner" role="status">
-          <Info size={16} aria-hidden="true" />
-          <span>
-            <strong>Demonstration Mode</strong> — Sensor readings are simulated. No physical device is connected.
-          </span>
+        <div className="flex justify-end mb-3">
+          <span className="text-xs text-text-tertiary" title="Illustrative generated sensor values">Simulation data</span>
         </div>
       )}
 
@@ -144,7 +141,7 @@ const LiveMonitoringPage: React.FC = () => {
                 <p className="text-sm text-text-tertiary">
                   {connectionStatus === 'connected'
                     ? `Last data: ${dataIsStale ? 'Stale — waiting for new data' : formatTime(lastTimestamp)}`
-                    : 'Demo streaming — simulated sensor data'}
+                    : 'Start a session to begin streaming'}
                 </p>
               </div>
             </div>
@@ -359,7 +356,7 @@ const LiveMonitoringPage: React.FC = () => {
                 </div>
                 <div>
                   <span className="font-medium">Mode:</span>{' '}
-                  <span className="badge badge-warning">Demo Streaming</span>
+                  <span className="badge badge-neutral">Simulation</span>
                 </div>
                 <div>
                   <span className="font-medium">Last Received:</span>{' '}
