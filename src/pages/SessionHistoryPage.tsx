@@ -5,6 +5,7 @@ import {
   ChevronUp, ChevronDown, Info, Calendar, X,
 } from 'lucide-react';
 import { sessionService, settingsService } from '@/services';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   formatDate, formatDateTime, formatDuration, formatNumber,
   assessmentTypeLabel, sessionStatusLabel, downloadCSV, isValidDateRange,
@@ -14,6 +15,8 @@ import type { SessionSummary, SessionFilter, AssessmentType } from '@/types';
 const ITEMS_PER_PAGE = 8;
 
 const SessionHistoryPage: React.FC = () => {
+  const { user } = useAuth();
+  const patientId = user?.id || 'demo-patient-001';
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +42,7 @@ const SessionHistoryPage: React.FC = () => {
         dateTo,
         sortBy,
       };
-      const data = await sessionService.getSessions('demo-patient-001', filter);
+      const data = await sessionService.getSessions(patientId, filter);
       setSessions(data);
       setCurrentPage(1);
     } catch {
@@ -47,7 +50,7 @@ const SessionHistoryPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, assessmentType, dateFrom, dateTo, sortBy]);
+  }, [patientId, searchQuery, assessmentType, dateFrom, dateTo, sortBy]);
 
   useEffect(() => {
     fetchSessions();
@@ -264,7 +267,7 @@ const SessionHistoryPage: React.FC = () => {
                     </td>
                     <td>
                       {s.gripStrength != null ? (
-                        <span>{formatNumber(s.gripStrength, 0)}</span>
+                        <span>{formatNumber(s.gripStrength, 0)} mV</span>
                       ) : (
                         <span className="text-text-tertiary">—</span>
                       )}

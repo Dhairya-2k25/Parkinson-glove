@@ -9,6 +9,7 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { rehabService, sensorService } from '@/services';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatDate, formatDuration } from '@/utils';
 import type { RehabPhase, RehabSessionStatus, RehabExercise, ConnectionStatus } from '@/types';
 
@@ -138,12 +139,15 @@ const RehabilitationPage: React.FC = () => {
   useEffect(() => { exerciseRef.current = selectedExercise; }, [selectedExercise]);
   useEffect(() => { phaseTimeRef.current = phaseTime; }, [phaseTime]);
 
+  const { user } = useAuth();
+  const patientId = user?.id || 'demo-patient-001';
+
   // ── Load history ───────────────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       setLoadingHistory(true);
       try {
-        const exercises = await rehabService.getExercises('demo-patient-001');
+        const exercises = await rehabService.getExercises(patientId);
         setHistory(exercises);
       } catch {
         // Supplementary — silently ignore
@@ -152,7 +156,7 @@ const RehabilitationPage: React.FC = () => {
       }
     };
     load();
-  }, []);
+  }, [patientId]);
 
   // ── Connection status subscription ────────────────────────────────────────
   useEffect(() => {
@@ -295,7 +299,7 @@ const RehabilitationPage: React.FC = () => {
 
       const exercise: RehabExercise = {
         id: `rehab-${Date.now()}`,
-        patientId: 'demo-patient-001',
+        patientId,
         date: new Date().toISOString(),
         status: 'completed',
         phases: PHASE_ORDER.map(p => ({

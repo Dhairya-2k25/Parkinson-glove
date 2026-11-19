@@ -9,6 +9,7 @@ import {
   ArrowUpRight, ArrowDownRight, Minus,
 } from 'lucide-react';
 import { sessionService, patientService, settingsService } from '@/services';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   formatDate, formatDateTime, formatDuration, formatNumber,
   assessmentTypeLabel, sessionStatusLabel, downloadCSV,
@@ -18,6 +19,8 @@ import type { Session, BaselineMeasurement, BaselineComparison } from '@/types';
 
 const SessionDetailPage: React.FC = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const { user } = useAuth();
+  const patientId = user?.id || 'demo-patient-001';
   const [session, setSession] = useState<Session | null>(null);
   const [baseline, setBaseline] = useState<BaselineMeasurement | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +35,7 @@ const SessionDetailPage: React.FC = () => {
     try {
       const [s, b] = await Promise.all([
         sessionService.getSession(sessionId),
-        patientService.getBaseline('demo-patient-001'),
+        patientService.getBaseline(patientId),
       ]);
       setSession(s);
       setBaseline(b);
@@ -41,7 +44,7 @@ const SessionDetailPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, patientId]);
 
   useEffect(() => {
     fetchData();

@@ -9,6 +9,7 @@ import {
   ArrowRight, AlertTriangle, Clock, Info,
 } from 'lucide-react';
 import { sessionService, alertService, sensorService } from '@/services';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   formatDate, formatDuration, formatNumber,
   assessmentTypeLabel, sessionStatusLabel, timeAgo, alertTypeLabel,
@@ -18,6 +19,8 @@ import type { SessionSummary, CaregiverAlert, ConnectionStatus } from '@/types';
 type TimeRange = '7d' | '30d' | '90d';
 
 const DashboardPage: React.FC = () => {
+  const { user } = useAuth();
+  const patientId = user?.id || 'demo-patient-001';
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [alerts, setAlerts] = useState<CaregiverAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,8 +42,8 @@ const DashboardPage: React.FC = () => {
     setError(null);
     try {
       const [sessData, alertData] = await Promise.all([
-        sessionService.getSessions('demo-patient-001'),
-        alertService.getAlerts('demo-patient-001'),
+        sessionService.getSessions(patientId),
+        alertService.getAlerts(patientId),
       ]);
       setSessions(sessData);
       setAlerts(alertData);
@@ -49,7 +52,7 @@ const DashboardPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [patientId]);
 
   useEffect(() => {
     fetchData();

@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
   Wifi, WifiOff, Play, Pause, Radio, AlertTriangle,
-  Clock, Usb, Bluetooth, Cpu, CheckCircle2,
+  Clock, Usb, Bluetooth, Cpu, CheckCircle2, Square,
 } from 'lucide-react';
 import { sensorService, settingsService, alertService } from '@/services';
 import { formatTime, isStale, formatNumber } from '@/utils';
@@ -19,6 +19,7 @@ const LiveMonitoringPage: React.FC = () => {
   const [latestReading, setLatestReading] = useState<SensorReading | null>(null);
   const [isPaused, setIsPaused] = useState(sensorService.isPaused());
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isStreaming, setIsStreaming] = useState<boolean>((sensorService as any).isStreaming?.() || false);
   const [error, setError] = useState<string | null>(null);
   const [hardwareConnected, setHardwareConnected] = useState<boolean>((sensorService as any).isHardwareConnected?.() || false);
   const [deviceName, setDeviceName] = useState<string>((sensorService as any).getDeviceName?.() || 'ESP32 Device');
@@ -27,6 +28,18 @@ const LiveMonitoringPage: React.FC = () => {
   const lastAlertAtRef = useRef(0);
   const pauseRef = useRef(isPaused);
   pauseRef.current = isPaused;
+
+  const handleStartStreaming = useCallback(() => {
+    (sensorService as any).startMonitoring?.();
+    setIsStreaming(true);
+  }, []);
+
+  const handleStopStreaming = useCallback(() => {
+    (sensorService as any).stopMonitoring?.();
+    setIsStreaming(false);
+    setReadings([]);
+    setLatestReading(null);
+  }, []);
 
   const handleConnect = useCallback(async () => {
     setIsConnecting(true);
@@ -43,11 +56,12 @@ const LiveMonitoringPage: React.FC = () => {
   }, []);
 
   const handleDisconnect = useCallback(async () => {
+    handleStopStreaming();
     await sensorService.disconnect();
     setConnectionStatus('disconnected');
     setReadings([]);
     setLatestReading(null);
-  }, []);
+  }, [handleStopStreaming]);
 
   const handleConnectSerial = async () => {
     setEspConnecting(true);
@@ -55,6 +69,7 @@ const LiveMonitoringPage: React.FC = () => {
     try {
       await (sensorService as any).connectESP32Serial();
       setHardwareConnected(true);
+      setIsStreaming(true);
       setDeviceName((sensorService as any).getDeviceName?.() || 'ESP32 (USB Serial)');
     } catch (err: any) {
       if (err?.name !== 'NotFoundError') {
@@ -71,6 +86,7 @@ const LiveMonitoringPage: React.FC = () => {
     try {
       await (sensorService as any).connectESP32BLE();
       setHardwareConnected(true);
+      setIsStreaming(true);
       setDeviceName((sensorService as any).getDeviceName?.() || 'ESP32 (BLE)');
     } catch (err: any) {
       if (err?.name !== 'NotFoundError') {
@@ -84,6 +100,7 @@ const LiveMonitoringPage: React.FC = () => {
   const handleDisconnectHardware = async () => {
     await (sensorService as any).disconnectESP32?.();
     setHardwareConnected(false);
+    setIsStreaming(false);
   };
 
   const togglePause = useCallback(() => {
@@ -95,6 +112,7 @@ const LiveMonitoringPage: React.FC = () => {
   useEffect(() => sensorService.onStatusChange((status, paused) => {
     setConnectionStatus(status);
     setIsPaused(paused);
+    setIsStreaming((sensorService as any).isStreaming?.() || false);
     setHardwareConnected((sensorService as any).isHardwareConnected?.() || false);
     setDeviceName((sensorService as any).getDeviceName?.() || 'ESP32 Device');
   }), []);
@@ -197,17 +215,49 @@ const LiveMonitoringPage: React.FC = () => {
                 </p>
                 <p className="text-sm text-text-tertiary">
                   {hardwareConnected
-                    ? `Live physical glove sensor stream active — receiving IMU, FSR, and flex data`
-                    : `Sensors ready — connect physical ESP32 glove via USB cable or Bluetooth below`}
+                    ? `Live physical glove sensor stream active (${deviceName})`
+                    : isStreaming
+                    ? `Live sensor stream running — updating charts in real time`
+                    : `Device connected and calibrated — Click "Start Monitoring" to begin stream`}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {!isStreaming ? (
+                <button
+                  className="btn btn-teal text-xs"
+                  onClick={handleStartStreaming}
+                  title="Start live sensor stream"
+                >
+                  <Play size={14} />
+                  Start Monitoring
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-secondary text-xs"
+                    onClick={togglePause}
+                    aria-label={isPaused ? 'Resume display updates' : 'Pause display updates'}
+                  >
+                    {isPaused ? <Play size={14} /> : <Pause size={14} />}
+                    {isPaused ? 'Resume' : 'Pause'}
+                  </button>
+                  <button
+                    className="btn btn-danger text-xs"
+                    onClick={handleStopStreaming}
+                    title="Stop live monitoring"
+                  >
+                    <Square size={14} />
+                    Stop Monitoring
+                  </button>
+                </>
+              )}
+
               {!hardwareConnected ? (
                 <>
                   <button
-                    className="btn btn-teal text-xs"
+                    className="btn btn-secondary text-xs"
                     onClick={handleConnectSerial}
                     disabled={espConnecting}
                     title="Connect ESP32 via USB cable (Web Serial)"
@@ -232,18 +282,9 @@ const LiveMonitoringPage: React.FC = () => {
                   title="Disconnect physical ESP32"
                 >
                   <WifiOff size={14} />
-                  Disconnect Hardware
+                  Disconnect ESP32
                 </button>
               )}
-
-              <button
-                className="btn btn-secondary text-xs"
-                onClick={togglePause}
-                aria-label={isPaused ? 'Resume display updates' : 'Pause display updates'}
-              >
-                {isPaused ? <Play size={14} /> : <Pause size={14} />}
-                {isPaused ? 'Resume' : 'Pause'}
-              </button>
             </div>
           </div>
 
@@ -288,7 +329,27 @@ const LiveMonitoringPage: React.FC = () => {
         </div>
       )}
 
-      {connectionStatus === 'connected' && (
+      {connectionStatus === 'connected' && !isStreaming && (
+        <div className="card">
+          <div className="card-body">
+            <div className="empty-state py-12">
+              <Radio className="empty-state-icon mx-auto text-teal-600 mb-3" size={40} />
+              <p className="empty-state-title">Live Sensor Stream Inactive</p>
+              <p className="empty-state-description max-w-md mx-auto">
+                Device connected and calibrated. Click <strong>"Start Monitoring"</strong> to initiate real-time sensor data streaming and graphs, or pair your ESP32 glove via USB or Bluetooth.
+              </p>
+              <div className="flex justify-center gap-3 mt-5">
+                <button className="btn btn-teal btn-lg" onClick={handleStartStreaming}>
+                  <Play size={18} />
+                  Start Monitoring
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {connectionStatus === 'connected' && isStreaming && (
         <>
           {/* Latest Values */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">

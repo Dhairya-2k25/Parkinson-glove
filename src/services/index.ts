@@ -32,8 +32,28 @@ import {
 } from './mockData';
 import { esp32Service } from './esp32Service';
 
-// ---- Utilities ----
+// ---- Utilities & User-Scoped Storage ----
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+function getUserStorage<T>(key: string, defaultValue: T): T {
+  try {
+    if (typeof localStorage === 'undefined') return defaultValue;
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+}
+
+function setUserStorage<T>(key: string, value: T): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 function matchesAssessmentType(summary: SessionSummary, filter: Partial<SessionFilter>): boolean {
   if (!filter.assessmentType || filter.assessmentType === 'all') return true;
@@ -65,40 +85,110 @@ function matchesSearch(summary: SessionSummary, filter: Partial<SessionFilter>):
 
 // ---- Patient Service ----
 
-let patientData = { ...DEMO_PATIENT };
-
 export const patientService = {
-  async getProfile(_id: string): Promise<PatientProfile> {
-    await delay(100);
-    return { ...patientData };
-  },
-
-  async updateProfile(_id: string, data: Partial<PatientProfile>): Promise<PatientProfile> {
-    await delay(150);
-    patientData = { ...patientData, ...data };
-    if (data.preferences) {
-      patientData.preferences = { ...patientData.preferences, ...data.preferences };
+  async getProfile(id: string): Promise<PatientProfile> {
+    await delay(60);
+    // Showcase demo account has full clinical profile
+    if (id === 'demo-patient-001') {
+      return { ...DEMO_PATIENT };
     }
-    return { ...patientData };
+
+    // Newly created user accounts have their own isolated fresh profile
+    const key = `neuroglove_profile_${id}`;
+    const stored = getUserStorage<PatientProfile | null>(key, null);
+    if (stored) return stored;
+
+    // Create initial fresh profile from current auth session
+    let authName = 'New Patient';
+    try {
+      const storedAuth = sessionStorage.getItem('neuroglove_auth_user');
+      if (storedAuth) {
+        const u = JSON.parse(storedAuth);
+        if (u.name) authName = u.name;
+      }
+    } catch {}
+
+    const freshProfile: PatientProfile = {
+      id,
+      displayName: authName,
+      monitoringStartDate: new Date().toISOString(),
+      notes: 'Newly enrolled participant. Ready for initial clinical assessment.',
+      preferences: {
+        dominantHand: 'right',
+        notificationsEnabled: true,
+        alertSoundEnabled: false,
+        dataRetentionDays: 365,
+      },
+    };
+    setUserStorage(key, freshProfile);
+    return freshProfile;
   },
 
-  async getBaseline(_patientId: string): Promise<BaselineMeasurement | null> {
-    await delay(100);
-    return { ...DEMO_BASELINE };
+  async updateProfile(id: string, data: Partial<PatientProfile>): Promise<PatientProfile> {
+    await delay(80);
+    if (id === 'demo-patient-001') {
+      Object.assign(DEMO_PATIENT, data);
+      return { ...DEMO_PATIENT };
+    }
+    const current = await this.getProfile(id);
+    const updated: PatientProfile = {
+      ...current,
+      ...data,
+      preferences: {
+        ...current.preferences,
+        ...(data.preferences || {}),
+      },
+    };
+    setUserStorage(`neuroglove_profile_${id}`, updated);
+    return updated;
   },
 
-  async updateBaseline(_patientId: string, data: Partial<BaselineMeasurement>): Promise<BaselineMeasurement> {
-    await delay(150);
-    return { ...DEMO_BASELINE, ...data };
+  async getBaseline(patientId: string): Promise<BaselineMeasurement | null> {
+    await delay(60);
+    if (patientId === 'demo-patient-001') {
+      return { ...DEMO_BASELINE };
+    }
+    // Brand new accounts start with no baseline recorded yet
+    return getUserStorage<BaselineMeasurement | null>(`neuroglove_baseline_${patientId}`, null);
+  },
+
+  async updateBaseline(patientId: string, data: Partial<BaselineMeasurement>): Promise<BaselineMeasurement> {
+    await delay(80);
+    if (patientId === 'demo-patient-001') {
+      Object.assign(DEMO_BASELINE, data);
+      return { ...DEMO_BASELINE };
+    }
+    const current = (await this.getBaseline(patientId)) || {
+      id: `baseline-${patientId}`,
+      patientId,
+      recordedDate: new Date().toISOString(),
+      tremorAmplitude: null,
+      tremorFrequency: null,
+      gripStrength: null,
+      flexRange1: null,
+      flexRange2: null,
+      assessmentConditions: '',
+    };
+    const updated = { ...current, ...data };
+    setUserStorage(`neuroglove_baseline_${patientId}`, updated);
+    return updated;
   },
 };
 
 // ---- Session Service ----
 
 export const sessionService = {
-  async getSessions(_patientId: string, filter?: Partial<SessionFilter>): Promise<SessionSummary[]> {
-    await delay(120);
-    let results = [...DEMO_SESSION_SUMMARIES];
+  async getSessions(patientId: string, filter?: Partial<SessionFilter>): Promise<SessionSummary[]> {
+    await delay(70);
+    let results: SessionSummary[] = [];
+
+    if (patientId === 'demo-patient-001') {
+      // Showcase account has the 12 clinical demo sessions
+      results = [...DEMO_SESSION_SUMMARIES];
+    } else {
+      // Fresh user account has its own isolated sessions (starts empty [])
+      results = getUserStorage<SessionSummary[]>(`neuroglove_sessions_${patientId}`, []);
+    }
 
     if (filter) {
       results = results.filter(s =>
@@ -120,9 +210,50 @@ export const sessionService = {
   },
 
   async getSession(sessionId: string): Promise<Session | null> {
-    await delay(100);
-    const s = DEMO_SESSIONS.find(s => s.id === sessionId);
-    return s ? { ...s } : null;
+    await delay(60);
+    // 1. Search in showcase demo sessions
+    const demo = DEMO_SESSIONS.find(s => s.id === sessionId);
+    if (demo) return { ...demo };
+
+    // 2. Search in logged-in user's stored sessions
+    try {
+      const stored = sessionStorage.getItem('neuroglove_auth_user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        const fullKey = `neuroglove_full_sessions_${u.id}`;
+        const userSessions = getUserStorage<Session[]>(fullKey, []);
+        const match = userSessions.find(s => s.id === sessionId);
+        if (match) return match;
+      }
+    } catch {}
+
+    return null;
+  },
+
+  async saveSession(session: Session): Promise<Session> {
+    await delay(80);
+    if (session.patientId === 'demo-patient-001') {
+      DEMO_SESSIONS.unshift(session);
+      return session;
+    }
+    const key = `neuroglove_sessions_${session.patientId}`;
+    const summaries = getUserStorage<SessionSummary[]>(key, []);
+    const summary: SessionSummary = {
+      id: session.id,
+      assessmentType: session.assessmentType,
+      date: session.date,
+      duration: session.duration,
+      status: session.status,
+      tremorAmplitude: session.tremorAmplitude,
+      tremorFrequency: session.tremorFrequency,
+      gripStrength: session.gripStrength,
+    };
+    setUserStorage(key, [summary, ...summaries]);
+
+    const fullKey = `neuroglove_full_sessions_${session.patientId}`;
+    const fullSessions = getUserStorage<Session[]>(fullKey, []);
+    setUserStorage(fullKey, [session, ...fullSessions]);
+    return session;
   },
 
   exportSessionCSV(session: Session): string {
@@ -163,16 +294,16 @@ class MockSensorService {
   private paused = false;
   private deviceSource: 'esp32' | 'simulated' = 'simulated';
   private deviceName: string = 'ESP32 NeuroGlove';
+  private streaming: boolean = false;
 
   constructor() {
-    this.startStreaming();
-
-    // Listen for physical ESP32 hardware events
+    // Note: Do NOT auto-stream in constructor. Starts when user clicks "Start Monitoring" or connects hardware!
     esp32Service.onStatusChange((espStatus) => {
       if (espStatus.status === 'connected') {
         this.deviceSource = 'esp32';
         this.deviceName = espStatus.deviceName || 'ESP32 Device';
         this.status = 'connected';
+        this.streaming = true;
         this.stopStreaming(); // Switch to live ESP32 hardware feed
         this.notifyStatus();
       } else if (espStatus.status === 'connecting') {
@@ -180,17 +311,38 @@ class MockSensorService {
         this.notifyStatus();
       } else if (espStatus.status === 'disconnected') {
         this.deviceSource = 'simulated';
-        this.deviceName = 'ESP32 NeuroGlove (Simulated)';
+        this.deviceName = 'ESP32 NeuroGlove';
         this.status = 'connected';
-        this.startStreaming(); // Resume synthetic live stream
+        this.streaming = false;
+        this.stopStreaming();
         this.notifyStatus();
       }
     });
 
     esp32Service.onReading((reading) => {
       this.lastReading = reading;
+      this.streaming = true;
       this.listeners.forEach(cb => cb(reading));
     });
+  }
+
+  isStreaming(): boolean {
+    return this.streaming || this.isHardwareConnected();
+  }
+
+  startMonitoring(): void {
+    this.paused = false;
+    this.streaming = true;
+    this.status = 'connected';
+    this.startStreaming();
+    this.notifyStatus();
+  }
+
+  stopMonitoring(): void {
+    this.streaming = false;
+    this.paused = false;
+    this.stopStreaming();
+    this.notifyStatus();
   }
 
   isHardwareConnected(): boolean {
@@ -362,25 +514,42 @@ export const sensorService = new MockSensorService();
 let rehabExercises = [...DEMO_REHAB_EXERCISES];
 
 export const rehabService = {
-  async getExercises(_patientId: string): Promise<RehabExercise[]> {
-    await delay(100);
-    return [...rehabExercises].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  async getExercises(patientId: string): Promise<RehabExercise[]> {
+    await delay(70);
+    if (patientId === 'demo-patient-001') {
+      return [...rehabExercises].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }
+    const userEx = getUserStorage<RehabExercise[]>(`neuroglove_rehab_${patientId}`, []);
+    return userEx.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   },
 
   async getExercise(id: string): Promise<RehabExercise | null> {
-    await delay(80);
-    return rehabExercises.find(e => e.id === id) ?? null;
+    await delay(60);
+    const match = rehabExercises.find(e => e.id === id);
+    if (match) return match;
+
+    try {
+      const stored = sessionStorage.getItem('neuroglove_auth_user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        const userEx = getUserStorage<RehabExercise[]>(`neuroglove_rehab_${u.id}`, []);
+        const found = userEx.find(e => e.id === id);
+        if (found) return found;
+      }
+    } catch {}
+    return null;
   },
 
   async saveExercise(exercise: RehabExercise): Promise<RehabExercise> {
-    await delay(100);
-    const idx = rehabExercises.findIndex(e => e.id === exercise.id);
-    if (idx >= 0) {
-      rehabExercises[idx] = { ...exercise };
-    } else {
+    await delay(80);
+    if (exercise.patientId === 'demo-patient-001') {
       rehabExercises = [exercise, ...rehabExercises];
+      return exercise;
     }
-    return { ...exercise };
+    const key = `neuroglove_rehab_${exercise.patientId}`;
+    const userEx = getUserStorage<RehabExercise[]>(key, []);
+    setUserStorage(key, [exercise, ...userEx]);
+    return exercise;
   },
 };
 
@@ -389,9 +558,15 @@ export const rehabService = {
 let alertsData = [...DEMO_ALERTS];
 
 export const alertService = {
-  async getAlerts(_patientId: string, filter?: Partial<AlertFilter>): Promise<CaregiverAlert[]> {
-    await delay(100);
-    let results = [...alertsData];
+  async getAlerts(patientId: string, filter?: Partial<AlertFilter>): Promise<CaregiverAlert[]> {
+    await delay(70);
+    let results: CaregiverAlert[] = [];
+
+    if (patientId === 'demo-patient-001') {
+      results = [...alertsData];
+    } else {
+      results = getUserStorage<CaregiverAlert[]>(`neuroglove_alerts_${patientId}`, []);
+    }
 
     if (filter) {
       if (filter.status && filter.status !== 'all') {
@@ -414,9 +589,18 @@ export const alertService = {
   },
 
   async createTremorAlert(activity: number, source: 'demo' | 'live' = 'demo'): Promise<CaregiverAlert> {
+    let patientId = 'demo-patient-001';
+    try {
+      const stored = sessionStorage.getItem('neuroglove_auth_user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        if (u.id) patientId = u.id;
+      }
+    } catch {}
+
     const alert: CaregiverAlert = {
       id: `alert-live-${Date.now()}`,
-      patientId: 'demo-patient-001',
+      patientId,
       type: 'tremor_spike',
       severity: activity >= 18 ? 'high' : 'medium',
       status: 'new',
@@ -429,8 +613,15 @@ export const alertService = {
       acknowledgedBy: null,
       isConfirmed: false,
     };
-    alertsData = [alert, ...alertsData];
-    return { ...alert };
+
+    if (patientId === 'demo-patient-001') {
+      alertsData = [alert, ...alertsData];
+    } else {
+      const key = `neuroglove_alerts_${patientId}`;
+      const list = getUserStorage<CaregiverAlert[]>(key, []);
+      setUserStorage(key, [alert, ...list]);
+    }
+    return alert;
   },
 
   async getAlert(id: string): Promise<CaregiverAlert | null> {

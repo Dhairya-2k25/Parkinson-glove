@@ -32,6 +32,7 @@ const LoginPage: React.FC = () => {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
 
@@ -110,6 +111,21 @@ const LoginPage: React.FC = () => {
               Sign in to your NeuroGlove account
             </p>
           </div>
+
+          {/* Showcase Account Quick-Fill */}
+          <button
+            type="button"
+            className="auth-demo-pill"
+            onClick={() => {
+              setValue('email', 'demo@neuroglove.app');
+              setValue('password', 'Demo1234!');
+            }}
+            aria-label="Use showcase demo account"
+          >
+            <span className="auth-demo-dot" aria-hidden="true" />
+            Showcase Account (to show people)
+            <ArrowRight size={14} />
+          </button>
 
           {/* Error */}
           {submitError && (

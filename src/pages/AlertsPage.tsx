@@ -4,6 +4,7 @@ import {
   AlertTriangle, Clock, Info,
 } from 'lucide-react';
 import { alertService, settingsService } from '@/services';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   formatDateTime, timeAgo, alertTypeLabel,
   alertSeverityLabel, alertStatusLabel,
@@ -141,6 +142,8 @@ function ModalRow({ label, value }: { label: string; value: string }) {
 // ---- Main Page ----
 
 const AlertsPage: React.FC = () => {
+  const { user } = useAuth();
+  const patientId = user?.id || 'demo-patient-001';
   const [alerts, setAlerts] = useState<CaregiverAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +157,7 @@ const AlertsPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await alertService.getAlerts('demo-patient-001', {
+      const data = await alertService.getAlerts(patientId, {
         status: statusFilter,
         type: typeFilter,
       });
@@ -164,7 +167,7 @@ const AlertsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, typeFilter]);
+  }, [patientId, statusFilter, typeFilter]);
 
   useEffect(() => {
     fetchAlerts();

@@ -23,14 +23,14 @@ interface AuthContextValue {
   clearError: () => void;
 }
 
-// ---- Demo credentials (preserved as fallback) ----
+// ---- Showcase & Registered Users ----
 
 const DEMO_USERS: Record<string, { password: string; user: AuthUser }> = {
   'demo@neuroglove.app': {
     password: 'Demo1234!',
     user: {
       id: 'demo-patient-001',
-      name: 'Demo User',
+      name: 'Rajesh Kumar Sharma (Showcase)',
       email: 'demo@neuroglove.app',
       role: 'patient',
       createdAt: '2026-01-15T08:00:00Z',
@@ -40,7 +40,7 @@ const DEMO_USERS: Record<string, { password: string; user: AuthUser }> = {
     password: 'Demo1234!',
     user: {
       id: 'demo-caregiver-001',
-      name: 'Demo Caregiver',
+      name: 'Dr. Priya Mehta (Caregiver)',
       email: 'caregiver@neuroglove.app',
       role: 'caregiver',
       createdAt: '2026-01-15T08:00:00Z',
@@ -49,7 +49,27 @@ const DEMO_USERS: Record<string, { password: string; user: AuthUser }> = {
 };
 
 const STORAGE_KEY = 'neuroglove_auth_user';
+const USERS_STORAGE_KEY = 'neuroglove_registered_users';
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+function getStoredUsers(): Record<string, { password: string; user: AuthUser }> {
+  try {
+    const raw = localStorage.getItem(USERS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredUser(email: string, password: string, user: AuthUser) {
+  try {
+    const users = getStoredUsers();
+    users[email.toLowerCase().trim()] = { password, user };
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+  } catch (e) {
+    console.error('Failed to save registered user', e);
+  }
+}
 
 // ---- Context ----
 
@@ -141,15 +161,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       if (!isSupabaseConfigured) {
-        // Demo fallback
-        await delay(800);
-        const match = DEMO_USERS[email.toLowerCase().trim()];
-        if (!match || match.password !== password) {
-          throw new Error('Invalid email or password. Try demo@neuroglove.app / Demo1234!');
+        await delay(500);
+        const cleanEmail = email.toLowerCase().trim();
+
+        // 1. Check showcase demo accounts
+        const match = DEMO_USERS[cleanEmail];
+        if (match && match.password === password) {
+          setUser(match.user);
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(match.user));
+          return;
         }
-        setUser(match.user);
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(match.user));
-        return;
+
+        // 2. Check newly registered user accounts
+        const registeredUsers = getStoredUsers();
+        const regMatch = registeredUsers[cleanEmail];
+        if (regMatch && regMatch.password === password) {
+          setUser(regMatch.user);
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(regMatch.user));
+          return;
+        }
+
+        throw new Error('Invalid email or password. Use demo@neuroglove.app to showcase the app, or create a new account.');
       }
 
       // Supabase login
@@ -179,15 +211,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       if (!isSupabaseConfigured) {
-        // Demo fallback
-        await delay(1000);
+        await delay(600);
+        const cleanEmail = email.toLowerCase().trim();
+        const registeredUsers = getStoredUsers();
+
+        if (cleanEmail === 'demo@neuroglove.app' || registeredUsers[cleanEmail]) {
+          throw new Error('An account with this email address already exists.');
+        }
+
         const newUser: AuthUser = {
           id: `user-${Date.now()}`,
           name: name.trim(),
-          email: email.toLowerCase().trim(),
+          email: cleanEmail,
           role,
           createdAt: new Date().toISOString(),
         };
+
+        saveStoredUser(cleanEmail, password, newUser);
         setUser(newUser);
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
         return;

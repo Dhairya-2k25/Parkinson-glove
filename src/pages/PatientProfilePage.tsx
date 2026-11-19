@@ -7,6 +7,7 @@ import {
   ArrowDownRight, Minus, CheckCircle,
 } from 'lucide-react';
 import { patientService, sessionService, settingsService } from '@/services';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   formatDate, formatNumber, computeBaselineComparison,
   assessmentTypeLabel,
@@ -22,6 +23,8 @@ const profileSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>;
 
 const PatientProfilePage: React.FC = () => {
+  const { user } = useAuth();
+  const patientId = user?.id || 'demo-patient-001';
   const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [baseline, setBaseline] = useState<BaselineMeasurement | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -46,9 +49,9 @@ const PatientProfilePage: React.FC = () => {
     setError(null);
     try {
       const [p, b, s] = await Promise.all([
-        patientService.getProfile('demo-patient-001'),
-        patientService.getBaseline('demo-patient-001'),
-        sessionService.getSessions('demo-patient-001'),
+        patientService.getProfile(patientId),
+        patientService.getBaseline(patientId),
+        sessionService.getSessions(patientId),
       ]);
       setProfile(p);
       setBaseline(b);
@@ -63,7 +66,7 @@ const PatientProfilePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [reset]);
+  }, [patientId, reset]);
 
   useEffect(() => {
     fetchData();
@@ -73,7 +76,7 @@ const PatientProfilePage: React.FC = () => {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      const updated = await patientService.updateProfile('demo-patient-001', {
+      const updated = await patientService.updateProfile(patientId, {
         displayName: data.displayName,
         notes: data.notes,
         preferences: {
