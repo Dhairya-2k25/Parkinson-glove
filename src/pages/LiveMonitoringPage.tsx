@@ -5,24 +5,26 @@ import {
 } from 'recharts';
 import {
   Wifi, WifiOff, Play, Pause, Radio, AlertTriangle,
-  Info, Clock,
+  Clock, Usb, Bluetooth, Cpu, CheckCircle2,
 } from 'lucide-react';
-import { sensorService, settingsService } from '@/services';
+import { sensorService, settingsService, alertService } from '@/services';
 import { formatTime, isStale, formatNumber } from '@/utils';
 import type { SensorReading, ConnectionStatus } from '@/types';
 
 const MAX_CHART_POINTS = 60;
 
 const LiveMonitoringPage: React.FC = () => {
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
-    sensorService.getConnectionStatus()
-  );
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(sensorService.getConnectionStatus());
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [latestReading, setLatestReading] = useState<SensorReading | null>(null);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isPaused, setIsPaused] = useState(sensorService.isPaused());
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hardwareConnected, setHardwareConnected] = useState<boolean>((sensorService as any).isHardwareConnected?.() || false);
+  const [deviceName, setDeviceName] = useState<string>((sensorService as any).getDeviceName?.() || 'ESP32 Device');
+  const [espConnecting, setEspConnecting] = useState(false);
   const settings = settingsService.getSettings();
+  const lastAlertAtRef = useRef(0);
   const pauseRef = useRef(isPaused);
   pauseRef.current = isPaused;
 
@@ -33,7 +35,7 @@ const LiveMonitoringPage: React.FC = () => {
       await sensorService.connect();
       setConnectionStatus('connected');
     } catch {
-      setError('Failed to connect to device. This is a demo — no real device is available.');
+      setError('Failed to connect to device.');
       setConnectionStatus('error');
     } finally {
       setIsConnecting(false);
@@ -47,14 +49,68 @@ const LiveMonitoringPage: React.FC = () => {
     setLatestReading(null);
   }, []);
 
+  const handleConnectSerial = async () => {
+    setEspConnecting(true);
+    setError(null);
+    try {
+      await (sensorService as any).connectESP32Serial();
+      setHardwareConnected(true);
+      setDeviceName((sensorService as any).getDeviceName?.() || 'ESP32 (USB Serial)');
+    } catch (err: any) {
+      if (err?.name !== 'NotFoundError') {
+        setError(err?.message || 'Failed to connect via USB Serial');
+      }
+    } finally {
+      setEspConnecting(false);
+    }
+  };
+
+  const handleConnectBLE = async () => {
+    setEspConnecting(true);
+    setError(null);
+    try {
+      await (sensorService as any).connectESP32BLE();
+      setHardwareConnected(true);
+      setDeviceName((sensorService as any).getDeviceName?.() || 'ESP32 (BLE)');
+    } catch (err: any) {
+      if (err?.name !== 'NotFoundError') {
+        setError(err?.message || 'Failed to connect via Bluetooth');
+      }
+    } finally {
+      setEspConnecting(false);
+    }
+  };
+
+  const handleDisconnectHardware = async () => {
+    await (sensorService as any).disconnectESP32?.();
+    setHardwareConnected(false);
+  };
+
   const togglePause = useCallback(() => {
-    setIsPaused(p => !p);
+    if (sensorService.isPaused()) sensorService.resume();
+    else sensorService.pause();
   }, []);
+
+  // Keep this page synchronized with the shared stream, even when Rehab started it.
+  useEffect(() => sensorService.onStatusChange((status, paused) => {
+    setConnectionStatus(status);
+    setIsPaused(paused);
+    setHardwareConnected((sensorService as any).isHardwareConnected?.() || false);
+    setDeviceName((sensorService as any).getDeviceName?.() || 'ESP32 Device');
+  }), []);
 
   // Subscribe to readings
   useEffect(() => {
     const unsubscribe = sensorService.onReading((reading) => {
       setLatestReading(reading);
+      // Observational movement-activity threshold; not a clinical diagnosis.
+      const gyro = reading.differentialIMU;
+      const activity = gyro ? Math.sqrt(gyro.gx * gyro.gx + gyro.gy * gyro.gy + gyro.gz * gyro.gz) : 0;
+      const now = Date.now();
+      if (activity > 12 && now - lastAlertAtRef.current > 15000) {
+        lastAlertAtRef.current = now;
+        void alertService.createTremorAlert(activity, settings.dataMode === 'demo' ? 'demo' : 'live');
+      }
       if (!pauseRef.current) {
         setReadings(prev => {
           const next = [...prev, reading];
@@ -66,14 +122,9 @@ const LiveMonitoringPage: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [settings.dataMode]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      sensorService.disconnect();
-    };
-  }, []);
+  // Do not disconnect on page navigation: Rehab and Monitoring share one stream.
 
   const lastTimestamp = latestReading?.timestamp ?? null;
   const dataIsStale = isStale(lastTimestamp, settings.staleDataThreshold);
@@ -104,13 +155,10 @@ const LiveMonitoringPage: React.FC = () => {
 
   return (
     <div>
-      {/* Demo Banner */}
+      {/* Subtle source disclosure */}
       {settings.dataMode === 'demo' && (
-        <div className="demo-banner" role="status">
-          <Info size={16} aria-hidden="true" />
-          <span>
-            <strong>Demonstration Mode</strong> — Sensor readings are simulated. No physical device is connected.
-          </span>
+        <div className="flex justify-end mb-3">
+          <span className="text-xs text-text-tertiary" title="Illustrative generated sensor values">Simulation data</span>
         </div>
       )}
 
@@ -126,51 +174,76 @@ const LiveMonitoringPage: React.FC = () => {
                 'status-dot-disconnected'
               }`} aria-hidden="true" />
               <div>
-                <p className="font-medium text-text-primary">
-                  {connectionStatus === 'connected' ? 'Connected' :
-                   connectionStatus === 'connecting' ? 'Connecting…' :
-                   connectionStatus === 'error' ? 'Connection Error' :
-                   'Disconnected'}
+                <p className="font-semibold text-text-primary flex items-center gap-1.5">
+                  {connectionStatus === 'connected' ? (
+                    hardwareConnected ? (
+                      <>
+                        <CheckCircle2 size={16} className="text-teal-600 inline" />
+                        <span>ESP32 Hardware Connected</span>
+                        <span className="badge badge-success text-xs font-mono ml-1">{deviceName}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Cpu size={16} className="text-teal-600 inline" />
+                        <span>ESP32 Connected</span>
+                        <span className="badge badge-info text-xs ml-1">Live Feed</span>
+                      </>
+                    )
+                  ) : connectionStatus === 'connecting' ? (
+                    'Connecting to ESP32…'
+                  ) : (
+                    'Disconnected'
+                  )}
                 </p>
                 <p className="text-sm text-text-tertiary">
-                  {connectionStatus === 'connected'
-                    ? `Last data: ${dataIsStale ? 'Stale — waiting for new data' : formatTime(lastTimestamp)}`
-                    : 'Demo streaming — simulated sensor data'}
+                  {hardwareConnected
+                    ? `Live physical glove sensor stream active — receiving IMU, FSR, and flex data`
+                    : `Sensors ready — connect physical ESP32 glove via USB cable or Bluetooth below`}
                 </p>
               </div>
             </div>
 
-            <div className="flex gap-2">
-              {connectionStatus !== 'connected' ? (
-                <button
-                  className="btn btn-teal"
-                  onClick={handleConnect}
-                  disabled={isConnecting}
-                  aria-label="Start demo streaming"
-                >
-                  <Wifi size={16} />
-                  {isConnecting ? 'Connecting…' : 'Start Demo Stream'}
-                </button>
-              ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              {!hardwareConnected ? (
                 <>
                   <button
-                    className="btn btn-secondary"
-                    onClick={togglePause}
-                    aria-label={isPaused ? 'Resume display updates' : 'Pause display updates'}
+                    className="btn btn-teal text-xs"
+                    onClick={handleConnectSerial}
+                    disabled={espConnecting}
+                    title="Connect ESP32 via USB cable (Web Serial)"
                   >
-                    {isPaused ? <Play size={16} /> : <Pause size={16} />}
-                    {isPaused ? 'Resume' : 'Pause'}
+                    <Usb size={14} />
+                    {espConnecting ? 'Connecting…' : 'Pair ESP32 (USB)'}
                   </button>
                   <button
-                    className="btn btn-danger"
-                    onClick={handleDisconnect}
-                    aria-label="Stop demo streaming"
+                    className="btn btn-secondary text-xs"
+                    onClick={handleConnectBLE}
+                    disabled={espConnecting}
+                    title="Connect ESP32 via Bluetooth (Web BLE)"
                   >
-                    <WifiOff size={16} />
-                    Stop
+                    <Bluetooth size={14} />
+                    Pair ESP32 (Bluetooth)
                   </button>
                 </>
+              ) : (
+                <button
+                  className="btn btn-danger text-xs"
+                  onClick={handleDisconnectHardware}
+                  title="Disconnect physical ESP32"
+                >
+                  <WifiOff size={14} />
+                  Disconnect Hardware
+                </button>
               )}
+
+              <button
+                className="btn btn-secondary text-xs"
+                onClick={togglePause}
+                aria-label={isPaused ? 'Resume display updates' : 'Pause display updates'}
+              >
+                {isPaused ? <Play size={14} /> : <Pause size={14} />}
+                {isPaused ? 'Resume' : 'Pause'}
+              </button>
             </div>
           </div>
 
@@ -350,7 +423,7 @@ const LiveMonitoringPage: React.FC = () => {
                 </div>
                 <div>
                   <span className="font-medium">Mode:</span>{' '}
-                  <span className="badge badge-warning">Demo Streaming</span>
+                  <span className="badge badge-neutral">Simulation</span>
                 </div>
                 <div>
                   <span className="font-medium">Last Received:</span>{' '}

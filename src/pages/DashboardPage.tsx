@@ -1,19 +1,19 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts';
 import {
   Activity, Zap, GripHorizontal, Calendar, Wifi, WifiOff,
   ArrowRight, AlertTriangle, Clock, Info,
 } from 'lucide-react';
-import { sessionService, alertService, settingsService } from '@/services';
+import { sessionService, alertService, sensorService } from '@/services';
 import {
-  formatDate, formatDateTime, formatDuration, formatNumber,
+  formatDate, formatDuration, formatNumber,
   assessmentTypeLabel, sessionStatusLabel, timeAgo, alertTypeLabel,
 } from '@/utils';
-import type { SessionSummary, CaregiverAlert, DataMode } from '@/types';
+import type { SessionSummary, CaregiverAlert, ConnectionStatus } from '@/types';
 
 type TimeRange = '7d' | '30d' | '90d';
 
@@ -23,8 +23,16 @@ const DashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [error, setError] = useState<string | null>(null);
-  const settings = settingsService.getSettings();
-  const dataMode: DataMode = settings.dataMode;
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
+    sensorService.getConnectionStatus()
+  );
+
+  useEffect(() => {
+    const unsub = sensorService.onStatusChange((status) => {
+      setConnectionStatus(status);
+    });
+    return unsub;
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -52,8 +60,21 @@ const DashboardPage: React.FC = () => {
   const latestWithTremor = completedSessions.find(s => s.tremorAmplitude != null);
   const latestWithGrip = completedSessions.find(s => s.gripStrength != null);
 
-  // Filter sessions by time range for chart
+  // Sessions in last 30 days
   const now = Date.now();
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  const sessionsLast30d = completedSessions.filter(
+    s => now - new Date(s.date).getTime() <= thirtyDaysMs
+  );
+
+  // Baseline amplitude for trend indicator (Parkinson's typical baseline)
+  const BASELINE_AMPLITUDE = 3.2;
+  const latestAmplitude = latestWithTremor?.tremorAmplitude ?? null;
+  const amplitudeTrend = latestAmplitude != null
+    ? latestAmplitude > BASELINE_AMPLITUDE ? 'worse' : 'better'
+    : null;
+
+  // Filter sessions by time range for chart
   const rangeDays = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
   const rangeMs = rangeDays * 24 * 60 * 60 * 1000;
   const filteredSessions = completedSessions
@@ -63,22 +84,25 @@ const DashboardPage: React.FC = () => {
     })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  // Chart data
+  // Chart data — includes gripStrength
   const chartData = filteredSessions
-    .filter(s => s.tremorAmplitude != null || s.tremorFrequency != null)
+    .filter(s => s.tremorAmplitude != null || s.tremorFrequency != null || s.gripStrength != null)
     .map(s => ({
       date: new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
       amplitude: s.tremorAmplitude ?? undefined,
       frequency: s.tremorFrequency ?? undefined,
+      gripStrength: s.gripStrength ?? undefined,
     }));
 
   const recentSessions = sessions.slice(0, 5);
   const activeAlerts = alerts.filter(a => a.status === 'new' || a.status === 'acknowledged');
 
+  const isConnected = connectionStatus === 'connected';
+  const isConnecting = connectionStatus === 'connecting';
+
   if (loading) {
     return (
       <div aria-live="polite" aria-label="Loading dashboard">
-        {dataMode === 'demo' && <DemoBanner />}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {[1, 2, 3, 4].map(i => (
             <div key={i} className="metric-card">
@@ -116,41 +140,105 @@ const DashboardPage: React.FC = () => {
 
   return (
     <div>
-      {dataMode === 'demo' && <DemoBanner />}
-
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <MetricCard
-          icon={<Activity size={16} className="text-teal-600" />}
-          label="Latest Tremor Amplitude"
-          value={latestWithTremor?.tremorAmplitude}
-          unit="mm"
-          footer={latestWithTremor ? `Recorded ${timeAgo(latestWithTremor.date)}` : undefined}
-          emptyText="No tremor data available"
-        />
+        {/* Card 1: Tremor Amplitude with trend */}
+        <div className="metric-card">
+          <div className="metric-card-label">
+            <Activity size={16} className="text-teal-600" />
+            Latest Tremor Amplitude
+          </div>
+          {latestAmplitude != null ? (
+            <>
+              <div className="metric-card-value flex items-baseline gap-1">
+                {formatNumber(latestAmplitude, 1)}
+                <span className="metric-card-unit">mm</span>
+                {amplitudeTrend === 'worse' && (
+                  <span className="text-danger-500 text-sm font-semibold ml-1" title="Above baseline">↑</span>
+                )}
+                {amplitudeTrend === 'better' && (
+                  <span className="text-teal-600 text-sm font-semibold ml-1" title="Below baseline">↓</span>
+                )}
+              </div>
+              <div className="metric-card-footer">
+                {amplitudeTrend === 'worse' ? 'Above baseline · ' : 'Below baseline · '}
+                {latestWithTremor ? timeAgo(latestWithTremor.date) : ''}
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-text-tertiary mt-1">No tremor data available</div>
+          )}
+        </div>
+
+        {/* Card 2: Tremor Frequency */}
         <MetricCard
           icon={<Zap size={16} className="text-teal-600" />}
-          label="Latest Tremor Frequency"
+          label="Tremor Frequency"
           value={latestWithTremor?.tremorFrequency}
           unit="Hz"
           footer={latestWithTremor ? `From ${assessmentTypeLabel(latestWithTremor.assessmentType)}` : undefined}
           emptyText="No frequency data available"
         />
+
+        {/* Card 3: Grip Strength */}
         <MetricCard
           icon={<GripHorizontal size={16} className="text-teal-600" />}
           label="Latest Grip Strength"
           value={latestWithGrip?.gripStrength}
-          unit="raw"
+          unit="mV"
           footer={latestWithGrip ? `Recorded ${timeAgo(latestWithGrip.date)}` : undefined}
           emptyText="No grip data available"
         />
-        <MetricCard
-          icon={<Calendar size={16} className="text-teal-600" />}
-          label="Most Recent Assessment"
-          dateValue={completedSessions[0]?.date}
-          footer={completedSessions[0] ? assessmentTypeLabel(completedSessions[0].assessmentType) : undefined}
-          emptyText="No assessments yet"
-        />
+
+        {/* Card 4: Sessions (30d) */}
+        <div className="metric-card">
+          <div className="metric-card-label">
+            <Calendar size={16} className="text-teal-600" />
+            Sessions (30d)
+          </div>
+          <div className="metric-card-value">
+            {sessionsLast30d.length}
+          </div>
+          <div className="metric-card-footer">
+            Completed in last 30 days
+          </div>
+        </div>
+      </div>
+
+      {/* Device Connection Status */}
+      <div className={`flex items-center gap-3 mb-6 px-4 py-3 rounded-lg border ${
+        isConnected
+          ? 'border-teal-200 bg-teal-50'
+          : isConnecting
+          ? 'border-amber-200 bg-amber-50'
+          : 'border-red-200 bg-red-50'
+      }`}>
+        <span className={`inline-block w-3 h-3 rounded-full shrink-0 ${
+          isConnected ? 'bg-teal-500 shadow-[0_0_0_3px_rgba(13,148,136,0.2)]'
+          : isConnecting ? 'bg-amber-400 animate-pulse'
+          : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.2)]'
+        }`} />
+        {isConnected
+          ? <Wifi size={15} className="text-teal-600" />
+          : <WifiOff size={15} className={isConnecting ? 'text-amber-500' : 'text-red-500'} />
+        }
+        <span className={`text-sm font-medium ${
+          isConnected ? 'text-teal-700'
+          : isConnecting ? 'text-amber-700'
+          : 'text-red-700'
+        }`}>
+          {isConnected
+            ? ((sensorService as any).isHardwareConnected?.()
+                ? `ESP32 Hardware Connected (${(sensorService as any).getDeviceName()})`
+                : 'ESP32 Device Connected — Sensor Feed Ready')
+            : isConnecting ? 'Connecting…'
+            : 'Device Not Connected'}
+        </span>
+        {!isConnected && !isConnecting && (
+          <span className="text-xs text-text-tertiary ml-auto">
+            Connect the NeuroGlove to enable live monitoring
+          </span>
+        )}
       </div>
 
       {/* Chart + Actions row */}
@@ -186,7 +274,21 @@ const DashboardPage: React.FC = () => {
             ) : (
               <div aria-label={`Tremor trend chart showing ${chartData.length} data points over the last ${rangeDays} days`}>
                 <ResponsiveContainer width="100%" height={280}>
-                  <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <AreaChart data={chartData} margin={{ top: 5, right: 40, bottom: 5, left: 0 }}>
+                    <defs>
+                      <linearGradient id="gradAmplitude" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0d9488" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#0d9488" stopOpacity={0.03} />
+                      </linearGradient>
+                      <linearGradient id="gradFrequency" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.03} />
+                      </linearGradient>
+                      <linearGradient id="gradGrip" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.03} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis
                       dataKey="date"
@@ -195,10 +297,21 @@ const DashboardPage: React.FC = () => {
                       axisLine={{ stroke: '#e2e8f0' }}
                     />
                     <YAxis
+                      yAxisId="left"
                       tick={{ fontSize: 12, fill: '#94a3b8' }}
                       tickLine={false}
                       axisLine={{ stroke: '#e2e8f0' }}
                       width={45}
+                      label={{ value: 'mm / Hz', angle: -90, position: 'insideLeft', offset: 10, style: { fontSize: 10, fill: '#94a3b8' } }}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tick={{ fontSize: 12, fill: '#94a3b8' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#e2e8f0' }}
+                      width={50}
+                      label={{ value: 'Grip (mV)', angle: 90, position: 'insideRight', offset: 10, style: { fontSize: 10, fill: '#94a3b8' } }}
                     />
                     <Tooltip
                       contentStyle={{
@@ -210,27 +323,46 @@ const DashboardPage: React.FC = () => {
                       }}
                     />
                     <Legend verticalAlign="bottom" height={36} />
-                    <Line
+                    <Area
+                      yAxisId="left"
                       type="monotone"
                       dataKey="amplitude"
                       name="Amplitude (mm)"
-                      stroke="#178285"
+                      stroke="#0d9488"
                       strokeWidth={2}
-                      dot={{ fill: '#178285', r: 4 }}
-                      activeDot={{ r: 6 }}
+                      fill="url(#gradAmplitude)"
+                      fillOpacity={0.15}
+                      dot={false}
+                      activeDot={{ r: 5 }}
                       connectNulls={false}
                     />
-                    <Line
+                    <Area
+                      yAxisId="left"
                       type="monotone"
                       dataKey="frequency"
                       name="Frequency (Hz)"
-                      stroke="#4a6498"
+                      stroke="#f59e0b"
                       strokeWidth={2}
-                      dot={{ fill: '#4a6498', r: 4 }}
-                      activeDot={{ r: 6 }}
+                      fill="url(#gradFrequency)"
+                      fillOpacity={0.15}
+                      dot={false}
+                      activeDot={{ r: 5 }}
                       connectNulls={false}
                     />
-                  </LineChart>
+                    <Area
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="gripStrength"
+                      name="Grip Strength (mV)"
+                      stroke="#6366f1"
+                      strokeWidth={2}
+                      fill="url(#gradGrip)"
+                      fillOpacity={0.15}
+                      dot={false}
+                      activeDot={{ r: 5 }}
+                      connectNulls={false}
+                    />
+                  </AreaChart>
                 </ResponsiveContainer>
                 <p className="text-xs text-text-tertiary mt-2 text-center" role="note">
                   Chart shows session measurements. Each point represents one completed assessment.
@@ -262,17 +394,6 @@ const DashboardPage: React.FC = () => {
               <span>Check Baseline</span>
               <ArrowRight size={16} />
             </Link>
-
-            {/* Connection status info */}
-            <div className="mt-4 p-3 rounded-lg bg-surface-tertiary">
-              <div className="flex items-center gap-2 mb-1">
-                <WifiOff size={14} className="text-text-tertiary" />
-                <span className="text-sm font-medium text-text-secondary">Device Not Connected</span>
-              </div>
-              <p className="text-xs text-text-tertiary">
-                Connect the NeuroGlove device to begin live monitoring and real-time data collection.
-              </p>
-            </div>
           </div>
         </div>
       </div>
@@ -318,7 +439,9 @@ const DashboardPage: React.FC = () => {
                           {formatDate(s.date)}
                         </div>
                       </td>
-                      <td>{assessmentTypeLabel(s.assessmentType)}</td>
+                      <td>
+                        <AssessmentTypeBadge type={s.assessmentType} />
+                      </td>
                       <td>{formatDuration(s.duration)}</td>
                       <td>
                         <SessionStatusBadge status={s.status} />
@@ -359,6 +482,9 @@ const DashboardPage: React.FC = () => {
             </div>
           ) : (
             <div className="card-body space-y-3">
+              <p className="text-xs text-text-tertiary italic">
+                ℹ️ Demo data — representative of real caregiver alert patterns
+              </p>
               {activeAlerts.slice(0, 4).map(alert => (
                 <Link
                   key={alert.id}
@@ -399,17 +525,6 @@ const DashboardPage: React.FC = () => {
 
 // ---- Sub-components ----
 
-function DemoBanner() {
-  return (
-    <div className="demo-banner" role="status">
-      <Info size={16} aria-hidden="true" />
-      <span>
-        <strong>Demonstration Mode</strong> — Displayed data is simulated for demonstration purposes and does not represent real patient measurements.
-      </span>
-    </div>
-  );
-}
-
 function ClipboardIcon({ className }: { className?: string }) {
   return <Calendar className={className} />;
 }
@@ -436,8 +551,8 @@ function MetricCard({ icon, label, value, unit, dateValue, footer, emptyText }: 
         <>
           <div className="metric-card-value">
             {dateValue
-              ? formatDate(dateValue)
-              : formatNumber(value!, unit === 'raw' ? 0 : 1)}
+              ? dateValue
+              : formatNumber(value!, unit === 'raw' || unit === 'mV' ? 0 : 1)}
             {unit && !dateValue && <span className="metric-card-unit">{unit}</span>}
           </div>
           {footer && <div className="metric-card-footer">{footer}</div>}
@@ -446,6 +561,19 @@ function MetricCard({ icon, label, value, unit, dateValue, footer, emptyText }: 
         <div className="text-sm text-text-tertiary mt-1">{emptyText}</div>
       )}
     </div>
+  );
+}
+
+function AssessmentTypeBadge({ type }: { type: string }) {
+  const cls =
+    type === 'full_assessment' ? 'badge-info' :
+    type === 'tremor_assessment' ? 'badge-warning' :
+    type === 'grip_assessment' ? 'badge-success' :
+    'badge-neutral';
+  return (
+    <span className={`badge ${cls}`}>
+      {assessmentTypeLabel(type)}
+    </span>
   );
 }
 

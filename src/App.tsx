@@ -15,8 +15,6 @@ const SessionHistoryPage = lazy(() => import('@/pages/SessionHistoryPage'));
 const SessionDetailPage  = lazy(() => import('@/pages/SessionDetailPage'));
 const RehabilitationPage = lazy(() => import('@/pages/RehabilitationPage'));
 const AlertsPage         = lazy(() => import('@/pages/AlertsPage'));
-const SettingsPage       = lazy(() => import('@/pages/SettingsPage'));
-const TremorAnalyticsPage = lazy(() => import('@/pages/TremorAnalyticsPage'));
 
 function PageLoader() {
   return (
@@ -54,9 +52,7 @@ const App: React.FC = () => {
         <Route path="sessions" element={<Suspense fallback={<PageLoader />}><SessionHistoryPage /></Suspense>} />
         <Route path="sessions/:sessionId" element={<Suspense fallback={<PageLoader />}><SessionDetailPage /></Suspense>} />
         <Route path="rehabilitation" element={<Suspense fallback={<PageLoader />}><RehabilitationPage /></Suspense>} />
-        <Route path="analytics" element={<Suspense fallback={<PageLoader />}><TremorAnalyticsPage /></Suspense>} />
         <Route path="alerts" element={<Suspense fallback={<PageLoader />}><AlertsPage /></Suspense>} />
-        <Route path="settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

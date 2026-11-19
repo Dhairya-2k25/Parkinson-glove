@@ -32,7 +32,6 @@ const LoginPage: React.FC = () => {
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
 
@@ -44,11 +43,6 @@ const LoginPage: React.FC = () => {
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     }
-  };
-
-  const fillDemo = () => {
-    setValue('email', 'demo@neuroglove.app');
-    setValue('password', 'Demo1234!');
   };
 
   const busy = isSubmitting || isLoading;
@@ -116,18 +110,6 @@ const LoginPage: React.FC = () => {
               Sign in to your NeuroGlove account
             </p>
           </div>
-
-          {/* Demo quick-fill */}
-          <button
-            type="button"
-            className="auth-demo-pill"
-            onClick={fillDemo}
-            aria-label="Fill in demo credentials"
-          >
-            <span className="auth-demo-dot" aria-hidden="true" />
-            Try demo account — click to auto-fill
-            <ArrowRight size={14} />
-          </button>
 
           {/* Error */}
           {submitError && (
@@ -219,15 +201,6 @@ const LoginPage: React.FC = () => {
               Create one
             </Link>
           </p>
-
-          {/* Demo credentials hint */}
-          <div className="auth-credentials-hint">
-            <p className="font-medium text-text-secondary mb-1">Demo credentials</p>
-            <div className="font-mono text-xs text-text-tertiary space-y-0.5">
-              <p>Email: demo@neuroglove.app</p>
-              <p>Password: Demo1234!</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -30,6 +30,7 @@ import {
   DEMO_ALERTS,
   DEMO_NOTIFICATIONS,
 } from './mockData';
+import { esp32Service } from './esp32Service';
 
 // ---- Utilities ----
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -153,22 +154,118 @@ export const sessionService = {
 type ReadingCallback = (reading: SensorReading) => void;
 
 class MockSensorService {
-  private status: ConnectionStatus = 'disconnected';
+  private status: ConnectionStatus = 'connected';
   private listeners: Set<ReadingCallback> = new Set();
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private lastReading: SensorReading | null = null;
   private tickCount = 0;
+  private statusListeners: Set<(status: ConnectionStatus, paused: boolean) => void> = new Set();
+  private paused = false;
+  private deviceSource: 'esp32' | 'simulated' = 'simulated';
+  private deviceName: string = 'ESP32 NeuroGlove';
+
+  constructor() {
+    this.startStreaming();
+
+    // Listen for physical ESP32 hardware events
+    esp32Service.onStatusChange((espStatus) => {
+      if (espStatus.status === 'connected') {
+        this.deviceSource = 'esp32';
+        this.deviceName = espStatus.deviceName || 'ESP32 Device';
+        this.status = 'connected';
+        this.stopStreaming(); // Switch to live ESP32 hardware feed
+        this.notifyStatus();
+      } else if (espStatus.status === 'connecting') {
+        this.status = 'connecting';
+        this.notifyStatus();
+      } else if (espStatus.status === 'disconnected') {
+        this.deviceSource = 'simulated';
+        this.deviceName = 'ESP32 NeuroGlove (Simulated)';
+        this.status = 'connected';
+        this.startStreaming(); // Resume synthetic live stream
+        this.notifyStatus();
+      }
+    });
+
+    esp32Service.onReading((reading) => {
+      this.lastReading = reading;
+      this.listeners.forEach(cb => cb(reading));
+    });
+  }
+
+  isHardwareConnected(): boolean {
+    return this.deviceSource === 'esp32' && esp32Service.isConnected();
+  }
+
+  getDeviceSource(): 'esp32' | 'simulated' {
+    return this.deviceSource;
+  }
+
+  getDeviceName(): string {
+    return this.deviceName;
+  }
+
+  async connectESP32Serial(baudRate = 115200): Promise<boolean> {
+    return esp32Service.connectSerial(baudRate);
+  }
+
+  async connectESP32BLE(): Promise<boolean> {
+    return esp32Service.connectBLE();
+  }
+
+  async connectESP32WebSocket(url?: string): Promise<boolean> {
+    return esp32Service.connectWebSocket(url);
+  }
+
+  async disconnectESP32(): Promise<void> {
+    await esp32Service.disconnect();
+  }
+
+  private notifyStatus() {
+    this.statusListeners.forEach(cb => cb(this.status, this.paused));
+  }
+
+  onStatusChange(callback: (status: ConnectionStatus, paused: boolean) => void): () => void {
+    this.statusListeners.add(callback);
+    callback(this.status, this.paused);
+    return () => this.statusListeners.delete(callback);
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
 
   async connect(): Promise<void> {
+    if (this.status === 'connected' && !this.paused) return;
+    if (this.status === 'connecting') return;
     this.status = 'connecting';
-    await delay(800);
+    this.notifyStatus();
+    await delay(350);
     this.status = 'connected';
+    this.paused = false;
     this.startStreaming();
+    this.notifyStatus();
   }
 
   async disconnect(): Promise<void> {
     this.stopStreaming();
+    this.paused = false;
     this.status = 'disconnected';
+    this.notifyStatus();
+  }
+
+  pause(): void {
+    if (this.status !== 'connected' || this.paused) return;
+    this.paused = true;
+    this.stopStreaming();
+    this.notifyStatus();
+  }
+
+  resume(): void {
+    if (this.status !== 'connected' || !this.paused) return;
+    this.paused = false;
+    this.startStreaming();
+    this.notifyStatus();
   }
 
   getConnectionStatus(): ConnectionStatus {
@@ -190,31 +287,40 @@ class MockSensorService {
     this.stopStreaming();
     this.intervalId = setInterval(() => {
       this.tickCount++;
-      const s = Math.sin(this.tickCount * 0.1);
-      const c = Math.cos(this.tickCount * 0.1);
-
+      const time = this.tickCount * 0.04;
+      const s = Math.sin(time * 1.15);
+      const c = Math.cos(time * 0.87);
+      // Synthetic movement profile: low-level motion with irregular short tremor-like bursts.
+      // These are illustrative demo signals, not clinical measurements.
+      const burstCycle = (time % 9.5);
+      const burstEnvelope = burstCycle > 3.0 && burstCycle < 5.1
+        ? Math.pow(Math.sin(Math.PI * (burstCycle - 3.0) / 2.1), 2)
+        : 0;
+      const tremorWave = Math.sin(time * 2 * Math.PI * (4.2 + 0.45 * Math.sin(time * 0.23)));
+      const tremor = burstEnvelope * tremorWave;
+      const jitter = () => (Math.random() - 0.5);
       const reading: SensorReading = {
         timestamp: new Date().toISOString(),
         handIMU: {
-          ax: +(0.1 + s * 2.5 + Math.random() * 0.3).toFixed(3),
-          ay: +(0.05 + c * 1.8 + Math.random() * 0.2).toFixed(3),
-          az: +(9.78 + s * 0.4).toFixed(3),
-          gx: +(s * 15 + Math.random() * 2).toFixed(2),
-          gy: +(c * 12 + Math.random() * 1.5).toFixed(2),
-          gz: +(s * c * 8).toFixed(2),
+          ax: +(0.1 + s * 1.1 + tremor * 1.7 + jitter() * 0.16).toFixed(3),
+          ay: +(0.05 + c * 0.8 + tremor * 1.25 + jitter() * 0.14).toFixed(3),
+          az: +(9.78 + s * 0.18 + tremor * 0.35).toFixed(3),
+          gx: +(s * 3.8 + tremor * 22 + jitter() * 0.9).toFixed(2),
+          gy: +(c * 3.2 + tremor * 17 + jitter() * 0.8).toFixed(2),
+          gz: +(s * c * 2.4 + tremor * 12 + jitter() * 0.6).toFixed(2),
         },
         forearmIMU: {
-          ax: +(0.08 + s * 0.3 + Math.random() * 0.05).toFixed(3),
-          ay: +(0.04 + c * 0.25 + Math.random() * 0.04).toFixed(3),
-          az: +(9.79 + s * 0.05).toFixed(3),
-          gx: +(s * 2 + Math.random() * 0.3).toFixed(2),
-          gy: +(c * 1.5 + Math.random() * 0.2).toFixed(2),
-          gz: +(s * c * 1).toFixed(2),
+          ax: +(0.08 + s * 0.22 + jitter() * 0.035).toFixed(3),
+          ay: +(0.04 + c * 0.18 + jitter() * 0.03).toFixed(3),
+          az: +(9.79 + s * 0.035).toFixed(3),
+          gx: +(s * 1.5 + jitter() * 0.22).toFixed(2),
+          gy: +(c * 1.1 + jitter() * 0.18).toFixed(2),
+          gz: +(s * c * 0.7 + jitter() * 0.12).toFixed(2),
         },
         differentialIMU: null,
-        flexSensor1: Math.round(500 + s * 200 + Math.random() * 30),
-        flexSensor2: Math.round(480 + c * 180 + Math.random() * 25),
-        fsrReading: Math.round(300 + Math.abs(s) * 400 + Math.random() * 50),
+        flexSensor1: Math.round(500 + s * 105 + burstEnvelope * 45 + jitter() * 16),
+        flexSensor2: Math.round(480 + c * 92 + burstEnvelope * 32 + jitter() * 14),
+        fsrReading: Math.round(300 + Math.abs(s) * 210 + burstEnvelope * 95 + jitter() * 24),
         isValid: true,
       };
 
@@ -238,7 +344,7 @@ class MockSensorService {
           // Listener error should not break streaming
         }
       });
-    }, 200); // 5 Hz demo rate
+    }, 40); // 25 Hz illustrative stream for a more continuous-looking chart
   }
 
   private stopStreaming() {
@@ -305,6 +411,26 @@ export const alertService = {
     }
 
     return results.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  },
+
+  async createTremorAlert(activity: number, source: 'demo' | 'live' = 'demo'): Promise<CaregiverAlert> {
+    const alert: CaregiverAlert = {
+      id: `alert-live-${Date.now()}`,
+      patientId: 'demo-patient-001',
+      type: 'tremor_spike',
+      severity: activity >= 18 ? 'high' : 'medium',
+      status: 'new',
+      title: source === 'demo' ? 'Demo movement activity threshold exceeded' : 'Movement activity threshold exceeded',
+      description: `A movement activity estimate of ${activity.toFixed(1)} °/s exceeded the configured demonstration threshold. This is an observational alert, not a diagnosis or a clinically validated tremor measurement.${source === 'demo' ? ' Simulated sensor data was used.' : ''}`,
+      timestamp: new Date().toISOString(),
+      sessionId: null,
+      acknowledgedAt: null,
+      resolvedAt: null,
+      acknowledgedBy: null,
+      isConfirmed: false,
+    };
+    alertsData = [alert, ...alertsData];
+    return { ...alert };
   },
 
   async getAlert(id: string): Promise<CaregiverAlert | null> {
@@ -402,3 +528,5 @@ export const notificationService = {
     return notificationsData.filter(n => !n.read).length;
   },
 };
+
+export { esp32Service } from './esp32Service';
