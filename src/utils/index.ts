@@ -47,6 +47,18 @@ export function formatTime(iso: string | null | undefined): string {
   }
 }
 
+export function formatTimeHM(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(iso));
+  } catch {
+    return '—';
+  }
+}
+
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '—';
   const m = Math.floor(seconds / 60);

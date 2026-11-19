@@ -7,7 +7,7 @@ import {
 import { sessionService, settingsService } from '@/services';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  formatDate, formatDateTime, formatDuration, formatNumber,
+  formatDate, formatDateTime, formatTimeHM, formatDuration, formatNumber,
   assessmentTypeLabel, sessionStatusLabel, downloadCSV, isValidDateRange,
 } from '@/utils';
 import type { SessionSummary, SessionFilter, AssessmentType } from '@/types';
@@ -252,7 +252,7 @@ const SessionHistoryPage: React.FC = () => {
                         <Clock size={14} className="text-text-tertiary shrink-0" />
                         <div>
                           <div className="font-medium">{formatDate(s.date)}</div>
-                          <div className="text-xs text-text-tertiary">{formatDateTime(s.date).split(', ')[1]}</div>
+                          <div className="text-xs text-text-tertiary">{formatTimeHM(s.date)}</div>
                         </div>
                       </div>
                     </td>
