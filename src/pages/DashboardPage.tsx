@@ -235,11 +235,11 @@ const DashboardPage: React.FC = () => {
                 ? `ESP32 Hardware Connected (${(sensorService as any).getDeviceName()})`
                 : 'ESP32 Device Connected — Sensor Feed Ready')
             : isConnecting ? 'Connecting…'
-            : 'Device Not Connected'}
+            : 'ESP32 Not Connected'}
         </span>
         {!isConnected && !isConnecting && (
           <span className="text-xs text-text-tertiary ml-auto">
-            Connect the NeuroGlove to enable live monitoring
+            Click &quot;Start Live Monitoring&quot; to begin sensor stream or pair ESP32
           </span>
         )}
       </div>

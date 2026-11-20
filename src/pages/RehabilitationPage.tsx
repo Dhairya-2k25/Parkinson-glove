@@ -396,7 +396,7 @@ const RehabilitationPage: React.FC = () => {
       {isConnected
         ? <Wifi size={14} className="text-green-600" />
         : <WifiOff size={14} className="text-red-500" />}
-      {isConnected ? (isHardware ? 'ESP32 Hardware Connected' : 'ESP32 Connected') : 'Not Connected'}
+      {isConnected ? (isHardware ? 'ESP32 Hardware Connected' : 'ESP32 Connected') : 'ESP32 Not Connected'}
     </span>
   );
 

@@ -46,8 +46,8 @@ export const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, onToggleSidebar }) 
         <div
           className={`badge flex items-center gap-1.5 ${streamStatus === 'connected' ? 'badge-success' : 'badge-neutral'}`}
           role="status"
-          aria-label={streamStatus === 'connected' ? 'Device Connected' : 'Device Not Connected'}
-          title={streamStatus === 'connected' ? 'Device Connected' : 'Device Not Connected'}
+          aria-label={streamStatus === 'connected' ? 'ESP32 Connected' : 'ESP32 Not Connected'}
+          title={streamStatus === 'connected' ? 'ESP32 Connected' : 'ESP32 Not Connected'}
         >
           {streamStatus === 'connected' ? <Wifi size={12} aria-hidden="true" /> : <WifiOff size={12} aria-hidden="true" />}
           <span className="hidden sm:inline">{streamStatus === 'connected' ? 'Connected' : 'Not Connected'}</span>

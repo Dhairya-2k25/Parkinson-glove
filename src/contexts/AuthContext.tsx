@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { apiClient } from '@/lib/apiClient';
+import { sensorService } from '@/services';
 
 // ---- Types (preserved exactly) ----
 
@@ -167,6 +168,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // 1. Check showcase demo accounts
         const match = DEMO_USERS[cleanEmail];
         if (match && match.password === password) {
+          sensorService.reset();
           setUser(match.user);
           sessionStorage.setItem(STORAGE_KEY, JSON.stringify(match.user));
           return;
@@ -176,6 +178,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const registeredUsers = getStoredUsers();
         const regMatch = registeredUsers[cleanEmail];
         if (regMatch && regMatch.password === password) {
+          sensorService.reset();
           setUser(regMatch.user);
           sessionStorage.setItem(STORAGE_KEY, JSON.stringify(regMatch.user));
           return;
@@ -189,6 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (authError) throw new Error(authError.message);
       if (!data.user) throw new Error('Login failed — no user returned');
 
+      sensorService.reset();
       apiClient.setAuthToken(data.session?.access_token || null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.';
@@ -228,6 +232,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
 
         saveStoredUser(cleanEmail, password, newUser);
+        sensorService.reset();
         setUser(newUser);
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
         return;
@@ -244,6 +249,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (authError) throw new Error(authError.message);
       if (!data.user) throw new Error('Sign up failed — no user returned');
+
+      sensorService.reset();
 
       // Profile is auto-created by DB trigger, but also try to upsert via API
       if (data.session) {
@@ -265,6 +272,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // ---- Logout ----
   const logout = useCallback(() => {
+    sensorService.reset();
     setUser(null);
     setError(null);
     apiClient.setAuthToken(null);

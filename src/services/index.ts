@@ -285,7 +285,7 @@ export const sessionService = {
 type ReadingCallback = (reading: SensorReading) => void;
 
 class MockSensorService {
-  private status: ConnectionStatus = 'connected';
+  private status: ConnectionStatus = 'disconnected';
   private listeners: Set<ReadingCallback> = new Set();
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private lastReading: SensorReading | null = null;
@@ -312,7 +312,7 @@ class MockSensorService {
       } else if (espStatus.status === 'disconnected') {
         this.deviceSource = 'simulated';
         this.deviceName = 'ESP32 NeuroGlove';
-        this.status = 'connected';
+        this.status = 'disconnected';
         this.streaming = false;
         this.stopStreaming();
         this.notifyStatus();
@@ -341,6 +341,7 @@ class MockSensorService {
   stopMonitoring(): void {
     this.streaming = false;
     this.paused = false;
+    this.status = 'disconnected';
     this.stopStreaming();
     this.notifyStatus();
   }
@@ -373,6 +374,21 @@ class MockSensorService {
     await esp32Service.disconnect();
   }
 
+  reset(): void {
+    this.stopStreaming();
+    this.paused = false;
+    this.streaming = false;
+    this.status = 'disconnected';
+    this.deviceSource = 'simulated';
+    this.deviceName = 'ESP32 NeuroGlove';
+    try {
+      void esp32Service.disconnect();
+    } catch {
+      // ignore
+    }
+    this.notifyStatus();
+  }
+
   private notifyStatus() {
     this.statusListeners.forEach(cb => cb(this.status, this.paused));
   }
@@ -395,6 +411,7 @@ class MockSensorService {
     await delay(350);
     this.status = 'connected';
     this.paused = false;
+    this.streaming = true;
     this.startStreaming();
     this.notifyStatus();
   }
@@ -402,7 +419,15 @@ class MockSensorService {
   async disconnect(): Promise<void> {
     this.stopStreaming();
     this.paused = false;
+    this.streaming = false;
     this.status = 'disconnected';
+    this.deviceSource = 'simulated';
+    this.deviceName = 'ESP32 NeuroGlove';
+    try {
+      await esp32Service.disconnect();
+    } catch {
+      // ignore
+    }
     this.notifyStatus();
   }
 

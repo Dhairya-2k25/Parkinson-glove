@@ -32,11 +32,13 @@ const LiveMonitoringPage: React.FC = () => {
   const handleStartStreaming = useCallback(() => {
     (sensorService as any).startMonitoring?.();
     setIsStreaming(true);
+    setConnectionStatus('connected');
   }, []);
 
   const handleStopStreaming = useCallback(() => {
     (sensorService as any).stopMonitoring?.();
     setIsStreaming(false);
+    setConnectionStatus('disconnected');
     setReadings([]);
     setLatestReading(null);
   }, []);
@@ -101,6 +103,9 @@ const LiveMonitoringPage: React.FC = () => {
     await (sensorService as any).disconnectESP32?.();
     setHardwareConnected(false);
     setIsStreaming(false);
+    setConnectionStatus('disconnected');
+    setReadings([]);
+    setLatestReading(null);
   };
 
   const togglePause = useCallback(() => {
@@ -210,7 +215,10 @@ const LiveMonitoringPage: React.FC = () => {
                   ) : connectionStatus === 'connecting' ? (
                     'Connecting to ESP32…'
                   ) : (
-                    'Disconnected'
+                    <>
+                      <WifiOff size={16} className="text-danger-500 inline" />
+                      <span>ESP32 Not Connected</span>
+                    </>
                   )}
                 </p>
                 <p className="text-sm text-text-tertiary">
@@ -218,7 +226,7 @@ const LiveMonitoringPage: React.FC = () => {
                     ? `Live physical glove sensor stream active (${deviceName})`
                     : isStreaming
                     ? `Live sensor stream running — updating charts in real time`
-                    : `Device connected and calibrated — Click "Start Monitoring" to begin stream`}
+                    : `Device not connected — Click "Start Monitoring" to connect and begin stream`}
                 </p>
               </div>
             </div>
@@ -311,32 +319,18 @@ const LiveMonitoringPage: React.FC = () => {
         </div>
       </div>
 
-      {connectionStatus !== 'connected' && !isConnecting && (
-        <div className="card">
-          <div className="card-body">
-            <div className="empty-state">
-              <Radio className="empty-state-icon mx-auto" />
-              <p className="empty-state-title">No active data stream</p>
-              <p className="empty-state-description">
-                Start the demo stream to see simulated sensor readings, or connect a NeuroGlove device when available.
-              </p>
-              <button className="btn btn-teal mt-4" onClick={handleConnect}>
-                <Wifi size={16} />
-                Start Demo Stream
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {connectionStatus === 'connected' && !isStreaming && (
+      {!isStreaming && (
         <div className="card">
           <div className="card-body">
             <div className="empty-state py-12">
               <Radio className="empty-state-icon mx-auto text-teal-600 mb-3" size={40} />
-              <p className="empty-state-title">Live Sensor Stream Inactive</p>
+              <p className="empty-state-title">
+                {connectionStatus === 'connected' ? 'Live Sensor Stream Inactive' : 'ESP32 Device Not Connected'}
+              </p>
               <p className="empty-state-description max-w-md mx-auto">
-                Device connected and calibrated. Click <strong>"Start Monitoring"</strong> to initiate real-time sensor data streaming and graphs, or pair your ESP32 glove via USB or Bluetooth.
+                {connectionStatus === 'connected'
+                  ? 'Device connected and calibrated. Click "Start Monitoring" to initiate real-time sensor data streaming and graphs.'
+                  : 'Device is currently not connected. Click "Start Monitoring" to connect and begin live real-time sensor streaming, or pair your ESP32 glove via USB or Bluetooth.'}
               </p>
               <div className="flex justify-center gap-3 mt-5">
                 <button className="btn btn-teal btn-lg" onClick={handleStartStreaming}>
